@@ -107,6 +107,8 @@ def run(
         plots=True,
         callbacks=Callbacks(),
         compute_loss=None,
+        image_size_separation="rel",
+
 ):
     # Initialize/load model and set device
     training = model is not None
@@ -259,7 +261,7 @@ def run(
     # Compute metrics
     stats = [torch.cat(x, 0).cpu().numpy() for x in zip(*stats)]  # to numpy, тут количество всех наших картинок
     if len(stats) and stats[0].any():
-        tp, fp, p, r, f1, ap, ap_class, aps, apm, apl = ap_per_class(*stats, plot=plots, save_dir=save_dir, names=names)
+        tp, fp, p, r, f1, ap, ap_class, aps, apm, apl = ap_per_class(*stats, plot=plots, save_dir=save_dir, names=names, image_size_separation=image_size_separation)
         ap50, ap = ap[:, 0], ap.mean(1)  # AP@0.5, AP@0.5:0.95
         aps, apm, apl = aps.mean(1), apm.mean(1), apl.mean(1)
         mp, mr, map50, map = p.mean(), r.mean(), ap50.mean(), ap.mean()
@@ -350,6 +352,7 @@ def parse_opt():
     parser.add_argument('--half', action='store_true', help='use FP16 half-precision inference')
     parser.add_argument('--dnn', action='store_true', help='use OpenCV DNN for ONNX inference')
     parser.add_argument('--min-items', type=int, default=0, help='Experimental')
+    parser.add_argument('--image-size-separation', type=str, default="rel", help="rel or abs")
     opt = parser.parse_args()
     opt.data = check_yaml(opt.data)  # check YAML
     opt.save_json |= opt.data.endswith('coco.yaml')

@@ -23,7 +23,7 @@ def smooth(y, f=0.05):
     return np.convolve(yp, np.ones(nf) / nf, mode='valid')  # y-smoothed
 
 
-def ap_per_class(tp, conf, pred_cls, target_cls, xyxy, plot=False, save_dir='.', names=(), eps=1e-16, prefix=""): # add xyxy from target
+def ap_per_class(tp, conf, pred_cls, target_cls, xyxy, image_size_separation, plot=False, save_dir='.', names=(), eps=1e-16, prefix=""): # add xyxy from target
     """ Compute the average precision, given the recall and precision curves.
     Source: https://github.com/rafaelpadilla/Object-Detection-Metrics.
     # Arguments
@@ -75,7 +75,7 @@ def ap_per_class(tp, conf, pred_cls, target_cls, xyxy, plot=False, save_dir='.',
 
         # AP from recall-precision curve
         for j in range(tp.shape[1]):
-            ap[ci, j], mpre, mrec, aps[ci, j], apm[ci, j], apl[ci, j] = compute_ap(recall[:, j], precision[:, j], xyxy_t)
+            ap[ci, j], mpre, mrec, aps[ci, j], apm[ci, j], apl[ci, j] = compute_ap(recall[:, j], precision[:, j], xyxy_t, image_size_separation)
             if plot and j == 0:
                 py.append(np.interp(px, mrec, mpre))  # precision at mAP@0.5
 
@@ -96,7 +96,7 @@ def ap_per_class(tp, conf, pred_cls, target_cls, xyxy, plot=False, save_dir='.',
     return tp, fp, p, r, f1, ap, unique_classes.astype(int), aps, apm, apl
 
 
-def compute_ap(recall, precision, xyxy_t):
+def compute_ap(recall, precision, xyxy_t, image_size_separation):
     """ Compute the average precision, given the recall and precision curves
     # Arguments
         recall:    The recall curve (list)
@@ -105,7 +105,7 @@ def compute_ap(recall, precision, xyxy_t):
         Average precision, precision curve, recall curve
     """
 
-    categories = _compute_square(xyxy_t) # потом добавить туда возможность выбрать другие квартили
+    categories = _compute_square(xyxy_t, image_size_separation) # потом добавить туда возможность выбрать другие квартили
     ap_s = [] 
     for category in range(3):
         # тут нужно что изменить в пресижен и рекол
@@ -138,18 +138,21 @@ def _compute_ap(recall, precision):
     return ap, mpre, mrec
 
 
-def _compute_square(xyxy):
-    areas = (xyxy[:, 2] - xyxy[:, 0]) * (xyxy[:, 3] - xyxy[:, 1])
-    
-    # Вычисляем квартили
-    q1, q2, q3 = np.percentile(areas, [25, 50, 75])
-    
+def _compute_square(xyxy, image_size_separation):
+    categories = None
+    if image_size_separation == "rel":
+        areas = (xyxy[:, 2] - xyxy[:, 0]) * (xyxy[:, 3] - xyxy[:, 1])
+        q1, q2, q3 = np.percentile(areas, [25, 50, 75])
+    elif image_size_separation == "abs":
+        areas = (xyxy[:, 2] - xyxy[:, 0]) * (xyxy[:, 3] - xyxy[:, 1])
+        q1, q3 = 32**2, 96**2 
+    else:
+        raise 'image_size_separation mast be rel or abs'
     # Разделяем объекты на категории относительно площади
     categories = np.zeros(len(areas), dtype=int)
     categories[areas < q1] = 0  # Маленькие объекты
     categories[(areas >= q1) & (areas < q3)] = 1  # Средние объекты
     categories[areas >= q3] = 2  # Большие объекты
-    
     return categories
 
 
