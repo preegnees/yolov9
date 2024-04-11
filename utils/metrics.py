@@ -23,7 +23,7 @@ def smooth(y, f=0.05):
     return np.convolve(yp, np.ones(nf) / nf, mode='valid')  # y-smoothed
 
 
-def ap_per_class(tp, conf, pred_cls, target_cls, plot=False, save_dir='.', names=(), eps=1e-16, prefix=""):
+def ap_per_class(tp, conf, pred_cls, target_cls, xyxy, plot=False, save_dir='.', names=(), eps=1e-16, prefix=""): # add xyxy from target
     """ Compute the average precision, given the recall and precision curves.
     Source: https://github.com/rafaelpadilla/Object-Detection-Metrics.
     # Arguments
@@ -36,10 +36,10 @@ def ap_per_class(tp, conf, pred_cls, target_cls, plot=False, save_dir='.', names
     # Returns
         The average precision as computed in py-faster-rcnn.
     """
-
+    # print(xyxy)
     # Sort by objectness
     i = np.argsort(-conf)
-    tp, conf, pred_cls = tp[i], conf[i], pred_cls[i]
+    tp, conf, pred_cls, xyxy = tp[i], conf[i], pred_cls[i], xyxy[i] # берем с отсортированном порядке по уверенности элементы 
 
     # Find unique classes
     unique_classes, nt = np.unique(target_cls, return_counts=True)
@@ -48,20 +48,27 @@ def ap_per_class(tp, conf, pred_cls, target_cls, plot=False, save_dir='.', names
     # Create Precision-Recall curve and compute AP for each class
     px, py = np.linspace(0, 1, 1000), []  # for plotting
     ap, p, r = np.zeros((nc, tp.shape[1])), np.zeros((nc, 1000)), np.zeros((nc, 1000))
+    aps, apm, apl = np.zeros((nc, tp.shape[1])), np.zeros((nc, tp.shape[1])), np.zeros((nc, tp.shape[1]))
     for ci, c in enumerate(unique_classes):
-        i = pred_cls == c
+        i = pred_cls == c # берем наши предсказания и отмечаем в каких идет речь про текущий класс
         n_l = nt[ci]  # number of labels
         n_p = i.sum()  # number of predictions
         if n_p == 0 or n_l == 0:
             continue
 
+        xyxy_t = xyxy[i] # выбрали только те строки, которые отностятся к классу
+        # определение размеров каждого элемнеты и пренадлежность и конкатинкация с xyxy, а потом разделение на 3 группы
+        
         # Accumulate FPs and TPs
         fpc = (1 - tp[i]).cumsum(0)
         tpc = tp[i].cumsum(0)
 
+
         # Recall
         recall = tpc / (n_l + eps)  # recall curve
-        r[ci] = np.interp(-px, -conf[i], recall[:, 0], left=0)  # negative x, xp because xp decreases
+        r[ci] = np.interp(-px, -conf[i], recall[:, 0], left=0)  # negative x, xp because xp decreases, это тот график где моного сервых линий и эта одна из них
+
+        # итого тут где то нужно еще добавить таблицу с площадями а потом еше и разделить эти площади 
 
         # Precision
         precision = tpc / (tpc + fpc)  # precision curve
@@ -69,7 +76,7 @@ def ap_per_class(tp, conf, pred_cls, target_cls, plot=False, save_dir='.', names
 
         # AP from recall-precision curve
         for j in range(tp.shape[1]):
-            ap[ci, j], mpre, mrec = compute_ap(recall[:, j], precision[:, j])
+            ap[ci, j], mpre, mrec, aps[ci, j], apm[ci, j], apl[ci, j] = compute_ap(recall[:, j], precision[:, j], xyxy_t)
             if plot and j == 0:
                 py.append(np.interp(px, mrec, mpre))  # precision at mAP@0.5
 
@@ -87,10 +94,10 @@ def ap_per_class(tp, conf, pred_cls, target_cls, plot=False, save_dir='.', names
     p, r, f1 = p[:, i], r[:, i], f1[:, i]
     tp = (r * nt).round()  # true positives
     fp = (tp / (p + eps) - tp).round()  # false positives
-    return tp, fp, p, r, f1, ap, unique_classes.astype(int)
+    return tp, fp, p, r, f1, ap, unique_classes.astype(int), aps, apm, apl
 
 
-def compute_ap(recall, precision):
+def compute_ap(recall, precision, xyxy_t):
     """ Compute the average precision, given the recall and precision curves
     # Arguments
         recall:    The recall curve (list)
@@ -99,6 +106,20 @@ def compute_ap(recall, precision):
         Average precision, precision curve, recall curve
     """
 
+    categories = _compute_square(xyxy_t) # потом добавить туда возможность выбрать другие квартили
+    ap_s = [] 
+    for category in range(3):
+        # тут нужно что изменить в пресижен и рекол
+        ids = np.where(categories == category)[0]
+        recall_ = recall[ids]
+        precision_ = precision[ids]
+        ap_, _, _ = _compute_ap(recall=recall_, precision=precision_) # в первый раз будет s (0), m (1), l (2)
+        ap_s.append(ap_)
+    ap, mpre, mrec = _compute_ap(recall=recall, precision=precision)
+
+    return ap, mpre, mrec, ap_s[0], ap_s[1], ap_s[2]
+
+def _compute_ap(recall, precision):
     # Append sentinel values to beginning and end
     mrec = np.concatenate(([0.0], recall, [1.0]))
     mpre = np.concatenate(([1.0], precision, [0.0]))
@@ -110,12 +131,27 @@ def compute_ap(recall, precision):
     method = 'interp'  # methods: 'continuous', 'interp'
     if method == 'interp':
         x = np.linspace(0, 1, 101)  # 101-point interp (COCO)
-        ap = np.trapz(np.interp(x, mrec, mpre), x)  # integrate
+        ap = np.trapz(np.interp(x, mrec, mpre), x)  # integrate тут вычисляется читсло ap
+
     else:  # 'continuous'
         i = np.where(mrec[1:] != mrec[:-1])[0]  # points where x axis (recall) changes
         ap = np.sum((mrec[i + 1] - mrec[i]) * mpre[i + 1])  # area under curve
-
     return ap, mpre, mrec
+
+
+def _compute_square(xyxy):
+    areas = (xyxy[:, 2] - xyxy[:, 0]) * (xyxy[:, 3] - xyxy[:, 1])
+    
+    # Вычисляем квартили
+    q1, q2, q3 = np.percentile(areas, [25, 50, 75])
+    
+    # Разделяем объекты на категории относительно площади
+    categories = np.zeros(len(areas), dtype=int)
+    categories[areas < q1] = 0  # Маленькие объекты
+    categories[(areas >= q1) & (areas < q3)] = 1  # Средние объекты
+    categories[areas >= q3] = 2  # Большие объекты
+    
+    return categories
 
 
 class ConfusionMatrix:
@@ -312,6 +348,10 @@ def box_iou(box1, box2, eps=1e-7):
 
     # inter(N,M) = (rb(N,M,2) - lt(N,M,2)).clamp(0).prod(2)
     (a1, a2), (b1, b2) = box1.unsqueeze(1).chunk(2, 2), box2.unsqueeze(0).chunk(2, 2)
+    a_ = (torch.min(a2, b2) - torch.max(a1, b1))
+    print(a_)
+    b_ = a_.clamp(0)
+    print(b_)
     inter = (torch.min(a2, b2) - torch.max(a1, b1)).clamp(0).prod(2)
 
     # IoU = inter / (area1 + area2 - inter)

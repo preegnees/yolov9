@@ -8,6 +8,9 @@ import numpy as np
 import torch
 from tqdm import tqdm
 
+import ssl
+ssl._create_default_https_context = ssl._create_unverified_context
+
 FILE = Path(__file__).resolve()
 ROOT = FILE.parents[0]  # YOLO root directory
 if str(ROOT) not in sys.path:
@@ -58,8 +61,8 @@ def process_batch(detections, labels, iouv):
         correct (array[N, 10]), for 10 IoU levels
     """
     correct = np.zeros((detections.shape[0], iouv.shape[0])).astype(bool)
-    iou = box_iou(labels[:, 1:], detections[:, :4])
-    correct_class = labels[:, 0:1] == detections[:, 5]
+    iou = box_iou(labels[:, 1:], detections[:, :4]) # тут мы берем наши предсказания и лейблы и вычисляем пересечения их площадей (iou)
+    correct_class = labels[:, 0:1] == detections[:, 5] # ищем классы которые совпадают и какие нет
     for i in range(len(iouv)):
         x = torch.where((iou >= iouv[i]) & correct_class)  # IoU > threshold and classes match
         if x[0].shape[0]:
@@ -70,6 +73,7 @@ def process_batch(detections, labels, iouv):
                 # matches = matches[matches[:, 2].argsort()[::-1]]
                 matches = matches[np.unique(matches[:, 0], return_index=True)[1]]
             correct[matches[:, 1].astype(int), i] = True
+    print(correct)
     return torch.tensor(correct, dtype=torch.bool, device=iouv.device)
 
 
@@ -169,14 +173,45 @@ def run(
     if isinstance(names, (list, tuple)):  # old format
         names = dict(enumerate(names))
     class_map = coco80_to_coco91_class() if is_coco else list(range(1000))
-    s = ('%22s' + '%11s' * 6) % ('Class', 'Images', 'Instances', 'P', 'R', 'mAP50', 'mAP50-95')
-    tp, fp, p, r, f1, mp, mr, map50, ap50, map = 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0
+    s = ('%22s' + '%11s' * 9) % ('Class', 'Images', 'Instances', 'P', 'R', 'mAP50', 'mAP50-95', 'APs', "APm", "APl") # TODO сюда можно добавить выводы для aps apm apl
+    tp, fp, p, r, f1, mp, mr, map50, ap50, map = 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0 # TODO сюда тоже 
     dt = Profile(), Profile(), Profile()  # profiling times
     loss = torch.zeros(3, device=device)
     jdict, stats, ap, ap_class = [], [], [], []
     callbacks.run('on_val_start')
     pbar = tqdm(dataloader, desc=s, bar_format=TQDM_BAR_FORMAT)  # progress bar
     for batch_i, (im, targets, paths, shapes) in enumerate(pbar):
+
+        ###############
+        # import cv2
+        # import numpy as np
+
+        # # Предположим, что переменная `im` содержит тензор изображения
+        # # im = ваш тензор
+
+        # # Преобразуем тензор в массив NumPy
+        # numpy_image = im.cpu().numpy().squeeze()
+
+        # # Преобразуем размерности для отображения
+        # numpy_image = np.transpose(numpy_image, (1, 2, 0))
+
+        # # Восстанавливаем нормализацию (если применялась)
+        # # numpy_image = numpy_image * [0.229, 0.224, 0.225] + [0.485, 0.456, 0.406]
+        # # numpy_image = np.clip(numpy_image, 0, 1)  # Ограничиваем значения в пределах [0, 1]
+
+        # # Преобразуем изображение в формат, поддерживаемый OpenCV (uint8)
+        # image_for_display = (numpy_image).astype(np.uint8)
+
+        # # Отображаем изображение с помощью OpenCV
+        # cv2.imshow('Image', image_for_display)
+        # cv2.waitKey(0)
+        # cv2.destroyAllWindows()
+
+        # raise
+        ############
+
+
+
         callbacks.run('on_val_batch_start')
         with dt[0]:
             if cuda:
@@ -189,6 +224,7 @@ def run(
         # Inference
         with dt[1]:
             preds, train_out = model(im) if compute_loss else (model(im, augment=augment), None)
+            print(preds)
 
         # Loss
         if compute_loss:
@@ -198,7 +234,7 @@ def run(
         targets[:, 2:] *= torch.tensor((width, height, width, height), device=device)  # to pixels
         lb = [targets[targets[:, 0] == i, 1:] for i in range(nb)] if save_hybrid else []  # for autolabelling
         with dt[2]:
-            preds = non_max_suppression(preds,
+            preds = non_max_suppression(preds, # тут на выходе количество предсказаний с минимальной уверенностью 0.001
                                         conf_thres,
                                         iou_thres,
                                         labels=lb,
@@ -225,17 +261,18 @@ def run(
             if single_cls:
                 pred[:, 5] = 0
             predn = pred.clone()
-            scale_boxes(im[si].shape[1:], predn[:, :4], shape, shapes[si][1])  # native-space pred
+            scale_boxes(im[si].shape[1:], predn[:, :4], shape, shapes[si][1])  # native-space pred, увеличение до первичных размеров
 
             # Evaluate
             if nl:
                 tbox = xywh2xyxy(labels[:, 1:5])  # target boxes
-                scale_boxes(im[si].shape[1:], tbox, shape, shapes[si][1])  # native-space labels
+                scale_boxes(im[si].shape[1:], tbox, shape, shapes[si][1])  # native-space labels, потом мы делает так же для лейблов
                 labelsn = torch.cat((labels[:, 0:1], tbox), 1)  # native-space labels
-                correct = process_batch(predn, labelsn, iouv)
+                correct = process_batch(predn, labelsn, iouv) # тут по оси икс разные iou, по оси игрек наши предсказания и на пересечении bool, если подходит по iou наше наблюдение
                 if plots:
                     confusion_matrix.process_batch(predn, labelsn)
-            stats.append((correct, pred[:, 4], pred[:, 5], labels[:, 0]))  # (correct, conf, pcls, tcls)
+            # stats.append((correct, pred[:, 4], pred[:, 5], labels[:, 0]))  # (correct, conf, pcls, tcls) тут всегда по оси игрек будет количество наших предсказаний
+            stats.append((correct, pred[:, 4], pred[:, 5], labels[:, 0], pred[:, :4]))  # (correct, conf, pcls, tcls, xyxy) тут всегда по оси игрек будет количество наших предсказаний
 
             # Save/log
             if save_txt:
@@ -252,23 +289,25 @@ def run(
         callbacks.run('on_val_batch_end', batch_i, im, targets, paths, shapes, preds)
 
     # Compute metrics
-    stats = [torch.cat(x, 0).cpu().numpy() for x in zip(*stats)]  # to numpy
+    stats = [torch.cat(x, 0).cpu().numpy() for x in zip(*stats)]  # to numpy, тут количество всех наших картинок
     if len(stats) and stats[0].any():
-        tp, fp, p, r, f1, ap, ap_class = ap_per_class(*stats, plot=plots, save_dir=save_dir, names=names)
+        tp, fp, p, r, f1, ap, ap_class, aps, apm, apl = ap_per_class(*stats, plot=plots, save_dir=save_dir, names=names)
         ap50, ap = ap[:, 0], ap.mean(1)  # AP@0.5, AP@0.5:0.95
+        aps, apm, apl = aps.mean(1), apm.mean(1), apl.mean(1)
         mp, mr, map50, map = p.mean(), r.mean(), ap50.mean(), ap.mean()
+        mean_aps, mean_apm, mean_apl = aps.mean(), apm.mean(), apl.mean()
     nt = np.bincount(stats[3].astype(int), minlength=nc)  # number of targets per class
 
     # Print results
-    pf = '%22s' + '%11i' * 2 + '%11.3g' * 4  # print format
-    LOGGER.info(pf % ('all', seen, nt.sum(), mp, mr, map50, map))
+    pf = '%22s' + '%11i' * 2 + '%11.3g' * 7  # print format
+    LOGGER.info(pf % ('all', seen, nt.sum(), mp, mr, map50, map, mean_aps, mean_apm, mean_apl))
     if nt.sum() == 0:
         LOGGER.warning(f'WARNING ⚠️ no labels found in {task} set, can not compute metrics without labels')
 
     # Print results per class
     if (verbose or (nc < 50 and not training)) and nc > 1 and len(stats):
         for i, c in enumerate(ap_class):
-            LOGGER.info(pf % (names[c], seen, nt[c], p[i], r[i], ap50[i], ap[i]))
+            LOGGER.info(pf % (names[c], seen, nt[c], p[i], r[i], ap50[i], ap[i], aps[i], apm[i], apl[i]))
 
     # Print speeds
     t = tuple(x.t / seen * 1E3 for x in dt)  # speeds per image
@@ -279,7 +318,7 @@ def run(
     # Plots
     if plots:
         confusion_matrix.plot(save_dir=save_dir, names=list(names.values()))
-        callbacks.run('on_val_end', nt, tp, fp, p, r, f1, ap, ap50, ap_class, confusion_matrix)
+        callbacks.run('on_val_end', nt, tp, fp, p, r, f1, ap, ap50, ap_class, confusion_matrix, aps, apm, apl)
 
     # Save JSON
     if save_json and len(jdict):
@@ -320,10 +359,10 @@ def run(
 
 def parse_opt():
     parser = argparse.ArgumentParser()
-    parser.add_argument('--data', type=str, default=ROOT / 'data/coco.yaml', help='dataset.yaml path')
-    parser.add_argument('--weights', nargs='+', type=str, default=ROOT / 'yolo.pt', help='model path(s)')
-    parser.add_argument('--batch-size', type=int, default=32, help='batch size')
-    parser.add_argument('--imgsz', '--img', '--img-size', type=int, default=640, help='inference size (pixels)')
+    parser.add_argument('--data', type=str, default='coco128.yaml', help='dataset.yaml path')
+    parser.add_argument('--weights', nargs='+', type=str, default='yolov8n.pt', help='model path(s)')
+    parser.add_argument('--batch-size', type=int, default=1, help='batch size')
+    parser.add_argument('--imgsz', '--img', '--img-size', type=int, default=320, help='inference size (pixels)')
     parser.add_argument('--conf-thres', type=float, default=0.001, help='confidence threshold')
     parser.add_argument('--iou-thres', type=float, default=0.7, help='NMS IoU threshold')
     parser.add_argument('--max-det', type=int, default=300, help='maximum detections per image')
