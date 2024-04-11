@@ -36,7 +36,6 @@ def ap_per_class(tp, conf, pred_cls, target_cls, xyxy, plot=False, save_dir='.',
     # Returns
         The average precision as computed in py-faster-rcnn.
     """
-    # print(xyxy)
     # Sort by objectness
     i = np.argsort(-conf)
     tp, conf, pred_cls, xyxy = tp[i], conf[i], pred_cls[i], xyxy[i] # берем с отсортированном порядке по уверенности элементы 
@@ -348,10 +347,6 @@ def box_iou(box1, box2, eps=1e-7):
 
     # inter(N,M) = (rb(N,M,2) - lt(N,M,2)).clamp(0).prod(2)
     (a1, a2), (b1, b2) = box1.unsqueeze(1).chunk(2, 2), box2.unsqueeze(0).chunk(2, 2)
-    a_ = (torch.min(a2, b2) - torch.max(a1, b1))
-    print(a_)
-    b_ = a_.clamp(0)
-    print(b_)
     inter = (torch.min(a2, b2) - torch.max(a1, b1)).clamp(0).prod(2)
 
     # IoU = inter / (area1 + area2 - inter)

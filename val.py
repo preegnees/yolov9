@@ -73,7 +73,6 @@ def process_batch(detections, labels, iouv):
                 # matches = matches[matches[:, 2].argsort()[::-1]]
                 matches = matches[np.unique(matches[:, 0], return_index=True)[1]]
             correct[matches[:, 1].astype(int), i] = True
-    print(correct)
     return torch.tensor(correct, dtype=torch.bool, device=iouv.device)
 
 
@@ -182,36 +181,6 @@ def run(
     pbar = tqdm(dataloader, desc=s, bar_format=TQDM_BAR_FORMAT)  # progress bar
     for batch_i, (im, targets, paths, shapes) in enumerate(pbar):
 
-        ###############
-        # import cv2
-        # import numpy as np
-
-        # # Предположим, что переменная `im` содержит тензор изображения
-        # # im = ваш тензор
-
-        # # Преобразуем тензор в массив NumPy
-        # numpy_image = im.cpu().numpy().squeeze()
-
-        # # Преобразуем размерности для отображения
-        # numpy_image = np.transpose(numpy_image, (1, 2, 0))
-
-        # # Восстанавливаем нормализацию (если применялась)
-        # # numpy_image = numpy_image * [0.229, 0.224, 0.225] + [0.485, 0.456, 0.406]
-        # # numpy_image = np.clip(numpy_image, 0, 1)  # Ограничиваем значения в пределах [0, 1]
-
-        # # Преобразуем изображение в формат, поддерживаемый OpenCV (uint8)
-        # image_for_display = (numpy_image).astype(np.uint8)
-
-        # # Отображаем изображение с помощью OpenCV
-        # cv2.imshow('Image', image_for_display)
-        # cv2.waitKey(0)
-        # cv2.destroyAllWindows()
-
-        # raise
-        ############
-
-
-
         callbacks.run('on_val_batch_start')
         with dt[0]:
             if cuda:
@@ -224,7 +193,6 @@ def run(
         # Inference
         with dt[1]:
             preds, train_out = model(im) if compute_loss else (model(im, augment=augment), None)
-            print(preds)
 
         # Loss
         if compute_loss:
