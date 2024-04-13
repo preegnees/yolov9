@@ -7,24 +7,103 @@ warmup_momentum: 0.8  # warmup initial momentum
 warmup_bias_lr: 0.1  # warmup initial bias lr
 box: 7.5  # box loss gain
 cls: 0.5  # cls loss gain
-cls_pw: 1.0  # cls BCELoss positive_weight
-obj: 0.7  # obj loss gain (scale with pixels)
-obj_pw: 1.0  # obj BCELoss positive_weight
 dfl: 1.5  # dfl loss gain
-iou_t: 0.20  # IoU training threshold
-anchor_t: 5.0  # anchor-multiple threshold
-# anchors: 3  # anchors per output layer (0 to ignore)
-fl_gamma: 0.0  # focal loss gamma (efficientDet default gamma=1.5)
 hsv_h: 0.015  # image HSV-Hue augmentation (fraction)
 hsv_s: 0.7  # image HSV-Saturation augmentation (fraction)
 hsv_v: 0.4  # image HSV-Value augmentation (fraction)
 degrees: 0.0  # image rotation (+/- deg)
 translate: 0.1  # image translation (+/- fraction)
-scale: 0.9  # image scale (+/- gain)
-shear: 0.0  # image shear (+/- deg)
+scale: 0.5  # image scale (+/- gain)
+shear: 0.0  # image shear (+/- deg) 
 perspective: 0.0  # image perspective (+/- fraction), range 0-0.001
 flipud: 0.0  # image flip up-down (probability)
 fliplr: 0.5  # image flip left-right (probability)
 mosaic: 1.0  # image mosaic (probability)
-mixup: 0.15  # image mixup (probability)
-copy_paste: 0.3  # segment copy-paste (probability)
+mixup: 0.15  # image mixup (probability) 
+copy_paste: 0.3  # segment copy-paste (probability) 
+
+cls_pw: 1.0  # cls BCELoss positive_weight
+obj: 0.7  # obj loss gain (scale with pixels)
+obj_pw: 1.0  # obj BCELoss positive_weight
+iou_t: 0.20  # IoU training threshold
+# anchors: 3  # anchors per output layer (0 to ignore)
+anchor_t: 5.0  # anchor-multiple threshold
+fl_gamma: 0.0  # focal loss gamma (efficientDet default gamma=1.5)
+
+# ! yolo detect train \
+# model=/content/ultralytics/ultralytics/cfg/models/v8/yolov8.yaml \
+# data=/content/yolov9/datasets/VisDrone.yaml \
+# epochs=50 \
+# patience=100 \
+# batch=8 \
+# imgsz=640 \
+# save=True \
+# save_period= -1 \
+# workers=8 \
+# project="/content/runsU" \
+# name='exp' \
+# exist_ok=False \
+# pretrained=False \
+# optimizer='Adam' \
+# seed=0 \
+# close_mosaic=10 \
+# resume=False \
+# fraction=1.0 \
+# freeze=None \
+# lr0=0.01 \
+# lrf=0.01 \
+# momentum=0.937 \
+# weight_decay=0.0005 \
+# warmup_epochs=3.0 \
+# warmup_momentum=0.8 \
+# warmup_bias_lr=0.1 \
+# box=7.5 \
+# cls=0.5 \
+# dfl=1.5 \
+# label_smoothing=0.0 \
+# hsv_h=0.015 \
+# hsv_s=0.7 \
+# hsv_v=0.4 \
+# degrees=0.0 \
+# translate=0.1 \
+# scale=0.5 \
+# shear=0.0 \
+# perspective=0.0 \
+# flipud=0.0 \
+# fliplr=0.5 \
+# mosaic=1.0 \
+# mixup=0.15 \
+# copy_paste=0.3 \
+
+
+# ! python yolov9/train.py \
+# --cfg "/content/yolov9/models/detect/yolov8n.yaml" \
+# --data "/content/yolov9/datasets/VisDrone.yaml" \
+# --hyp "/content/yolov9/data/hyps/hyp.scratch-high.yaml" \
+# --epochs 50 \
+# --batch-size 8 \
+# --imgsz 640 \
+# --optimizer "Adam" \
+# --project "/content/runs9" \
+# --resume False \
+# --noautoanchor \
+# --noplots \
+# --evolve None \
+# --bucket '' \
+# --cache 'ram' \
+# --image-weights \
+# --multi-scale \
+# --sync-bn \
+# --workers 8 \
+# --name 'exp' \
+# --quad \
+# --flat-cos-lr \
+# --fixed-lr \
+# --label-smoothing 0.0 \
+# --patience 100 \
+# --freeze 0 \
+# --save-period -1 \
+# --seed 0 \
+# --local_rank -1 \
+# --min-items 0 \
+# --close-mosaic 10 
